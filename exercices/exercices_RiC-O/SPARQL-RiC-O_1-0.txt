@@ -1,0 +1,182 @@
+# Cours pour les étudiants du M2 TNAH de l'Ecole nationale des chartes, janvier 2025
+
+# Exécution de requêtes SPARQL sur un jeu de données RDF/RiC-O 1-0
+
+
+---
+# On demande juste ici la description d' (tous les triplets relatifs à) une ressource désignée par son URI
+
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+
+
+
+DESCRIBE <https://rdf.archives-nationales.culture.gouv.fr/agent/005429>
+
+---
+
+Essayer aussi 
+DESCRIBE <https://rdf.archives-nationales.culture.gouv.fr/recordResource/top-053378>
+
+------
+
+# recherche les personnes nées avant 1850 et leurs archives lorsqu'elles en ont
+
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT DISTINCT ?personne ?nom ?dateNaissance ?archives
+WHERE
+{
+    ?personne rdf:type rico:Person ; rdfs:label ?nom .
+    ?personne rico:birthDate ?dateNaissance .
+    FILTER (?dateNaissance < "1850-01-01"^^xsd:date)
+    OPTIONAL {?personne rico:isOrganicProvenanceOf ?archives .
+    }
+}
+
+-----
+
+
+
+# recherche les documents dont l'intitulé contient le mot "Louvre"
+
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?documents ?titre ?scopeContent ?date ?instrumentRecherche ?nomIR
+WHERE
+{
+   ?documents rdf:type rico:RecordResource .
+    ?documents rico:title ?titre .
+  #  ?documents rico:isOrWasIncludedIn* ?fonds .
+    ?documents rico:isIncludedInTransitive ?fonds .
+    ?fonds rico:isOrWasDescribedBy ?instrumentRecherche .
+    ?instrumentRecherche rico:title ?nomIR .
+    OPTIONAL {?documents rico:scopeAndContent ?scopeContent ;
+                         rico:date ?date .}
+    
+    FILTER contains(?titre, 'Louvre'@fr) .
+     
+}
+
+ORDER BY ?nomIR
+
+
+
+----
+
+# le nombre de ressources archivistiques hors IR et notices d'autorité
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+SELECT (COUNT(?docts) as ?NbDocts)
+WHERE
+{
+  ?docts a rico:RecordResource .
+    MINUS {
+         ?docts rico:hasDocumentaryFormType <https://www.ica.org/standards/RiC/vocabularies/documentaryFormTypes#AuthorityRecord> .
+    }
+    MINUS {
+     ?docts rico:hasDocumentaryFormType <https://www.ica.org/standards/RiC/vocabularies/documentaryFormTypes#FindingAid> .
+}
+}
+
+
+----
+
+# Recherche des collectivités (rico:CorporateBody) qui ont succédé à une collectivité précise, dont on connaît une partie du nom
+
+# Une requête qui ne peut pas être exécutée autrement que sur un graphe orienté, et qui demande SPARQL 1.1 ainsi que RiC-O pour fonctionner
+# On peut d'abord l'exécuter sans utiliser les règles d'inférence puis en incluant les données inférées
+
+
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+
+
+
+SELECT ?entite ?nom ?dateDebut ?dateFin ?archives WHERE
+{
+   ?bureauMH rdf:type rico:CorporateBody; rdfs:label ?label .
+    FILTER contains(?label, 'Monuments historiques (1839'@fr) .
+    ?bureauMH (rico:precedesInTime)+ ?entite .
+    ?entite rdfs:label ?nom; rico:beginningDate ?dateDebut .
+    OPTIONAL {
+        ?entite rico:endDate ?dateFin; rico:isOrganicProvenanceOf ?archives 
+    }    
+     
+}
+
+
+ORDER BY ?dateDebut
+
+----
+#les subdivisions du ministère de la Culture
+
+
+SELECT DISTINCT ?institution ?dateDebut ?nomInstitution 
+
+WHERE
+{
+  ?institution rico:isOrWasSubdivisionOf+ <https://rdf.archives-nationales.culture.gouv.fr/agent/000005> .
+
+   ?institution rdfs:label ?nomInstitution .
+   
+   OPTIONAL {?institution rico:beginningDate ?dateDebut .
+    }   
+}
+ORDER BY ?dateDebut
+
+----
+# les relations de Jean Favier (agent/050312) avec d'autres agents
+
+
+
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT DISTINCT ?relation ?label ?description ?dateDebut ?dateFin ?agentLié ?nomAgentLié
+
+WHERE 
+{
+?relation a rico:Relation; rdfs:label ?label .
+OPTIONAL {
+?relation rico:generalDescription ?description; rico:beginningDate ?dateDebut ; rico:endDate ?dateFin .
+}
+?relation rico:relationConnects <https://rdf.archives-nationales.culture.gouv.fr/agent/050312> .
+?relation rico:relationConnects ?agentLié .
+?agentLié rdfs:label ?nomAgentLié .
+FILTER (str(?agentLié) != 'https://rdf.archives-nationales.culture.gouv.fr/agent/050312')
+}
+
+ORDER BY ?dateDebut
+
+
+----
+# propage la provenance sur tous les ensembles documentaires et documents inclus dans un fonds
+# attention ! ce genre de requête est de façon générale à utiliser avec précaution (ici c'est plutôt juste un exemple d'inférence)
+
+PREFIX rico: <https://www.ica.org/standards/RiC/ontology#>
+
+
+CONSTRUCT { ?object rico:hasOrganicProvenance ?producteur}
+WHERE 
+{
+    ?object rico:isOrWasIncludedIn+ ?ArchivalResource.
+    ?ArchivalResource rico:hasOrganicProvenance ?producteur .
+  
+
+}
